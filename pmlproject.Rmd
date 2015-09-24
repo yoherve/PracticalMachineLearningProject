@@ -1,0 +1,127 @@
+# HUMAN ACTIVITY RECOGNITION
+## Practical Machine Learning Project
+### September, 2015   
+
+---
+
+#### EXECUTIVE SUMMARY
+This report covers the creation, testing and application of a machine-learning algorithm designed to predict correct weight lifting exercise technique using data collected from body and dumbbell sensors. Our random forest model generated estimated accuracy and Kappa rates of approximately 99%, with an OOB error rate of 0.72%. This model successfully predicted the correct value for each record of the test dataset. 
+
+More information about the Human Activity Recognition project is available here:
+
+[HAR Project](http://groupware.les.inf.puc-rio.br/har)
+
+---
+
+#### EXPLORATORY DATA ANALYSIS AND PRE-PROCESSING
+Participants were asked to perform repetitions of the Unilateral Dumbbell Biceps Curl in five different ways - correctly, and also incorporating the four most common mistakes. Sensors attached to the participants' bodies and the dumbbells recorded motion associated with the excercise. That motion data will be used to predict which of the five possible outcomes occurred for each repetition of the exercise.
+
+We'll begin by loading the necessary libraries:
+
+```{r message=FALSE}
+library(caret)
+library(randomForest)
+```
+
+Now let's load the datasets and examine the classification distribution of the outcome variable (classe):
+
+```{r}
+# load dataset (160 variables)
+train <- read.csv("pml-training.csv", header = TRUE)
+test <- read.csv("pml-testing.csv", header = TRUE)
+summary(train$classe)
+```
+
+The classe variable from the training dataset lists how each repetition of the exercise was classified. Frequency analysis shows a slightly unbalanced response class, but not enough of an unbalance to create a significant problem for model creation.
+
+The original dataset includes 160 variables, most of which appear to be unnecessary for creating our model. After examining the training dataset, pre-processing is performed to eliminate unnecessary variables associated with subject ID, time stamps, etc., variables with mostly NA values, near-zero-variance variables and highly correlated variables: 
+
+```{r}
+# remove id's and time stamp variables not needed for analysis (leaving 153 variables)
+train <- train[, -c(1:7)]
+
+# remove variables with over 90% NA values (leaving 86 variables)
+toomanyNA <- sapply(train, function(x) mean(is.na(x))) > 0.9
+train <- train[, toomanyNA == FALSE]
+
+# remove near-zero-variance predictors (leaving 53 variables)
+nzv <- nearZeroVar(train)
+train <- train[, -nzv]
+
+# remove correlated predictors with cor > .75 (leaving 33 variables)
+trainCor <- subset(train, select = -c(classe))
+M <- abs(cor(trainCor))
+summary(M[upper.tri(M)])
+HM <- findCorrelation(M, cutoff = .75)
+train <- train[, -HM]
+
+trainCor2 <- subset(train, select = -c(classe))
+M2 <- abs(cor(trainCor2))
+summary(M2[upper.tri(M2)])
+```
+
+---
+
+#### BUILDING AND TESTING THE MODEL
+Once pre-processing was initially completed, several possible cross validation and model construction methods (trees, random forest, boosting, etc.) were tried before choosing a random forest prediction model with a split training dataset for cross validation. The random forest model was selected for it's higher accuracy rate, keeping in mind the tendency of this model towards overfitting.
+
+Even though the random forest model includes cross validation functionality, the training data was split into two datasets to verify overfitting was not an issue:
+
+```{r}
+# split training data into two sets
+set.seed(007)
+inTrain <- createDataPartition(y = train$classe, p= 0.7, list = FALSE)
+train1 <- train[inTrain, ]
+train2 <- train[-inTrain, ]
+```
+
+Now let's create the model using the first training dataset:
+
+```{r}
+# create random forest model
+set.seed(007)
+fitRF <- randomForest(classe ~ ., data = train1)
+fitRF
+```
+
+The OOB estimate and confusion matrix statistics are within the range of expected values for a successful model.
+
+Now let's test the model against the second training dataset:
+
+```{r}
+# apply model to second training set
+predRF <- predict(fitRF, train2, type = "class")
+confmatRF <- confusionMatrix(predRF, train2$classe)
+confmatRF
+```
+
+Again, the confusion matrix statistics, accuracy, Kappa and class statistics are all acceptable. Overfitting does not appear to be an issue.
+
+---
+        
+#### CONCLUSION
+
+Our final random forest model generated an estimated accuracy rate of over 99% and a Kappa of just under 99%, with an OOB error rate of 0.72% - these statistics indicate our model can be expected to be an effective predictor when applied to the test data. 
+
+Finally, let's apply the model to the test dataset and generate the files necessary to submit our predictions:
+
+```{r}
+# create vector with test data predictions and write to files for submission
+answers <- predict(fitRF, newdata = test)
+pml_write_files = function(x){
+        n = length(x)
+        for(i in 1:n){
+                filename = paste0("problem_id_",i,".txt")
+                write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+        }
+}
+pml_write_files(answers)
+answers
+```
+
+When applied to the final test dataset, our model successfully predicted the correct value for each record. 
+
+---
+
+
+
